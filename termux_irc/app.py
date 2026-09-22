@@ -17,6 +17,7 @@ from .commands import CommandContext
 from .config import Config
 from .protocol import IRCMessage, irc_lower, is_channel
 from .state import STATUS_BUFFER, ClientState
+from .termux_api import TermuxAPI
 
 RECONNECT_BASE_DELAY = 3.0
 RECONNECT_MAX_DELAY = 60.0
@@ -83,6 +84,14 @@ class IRCApp:
         )
         self.state.autojoin = list(config.channels)
         self.client: IRCClient | None = None
+        self.termux = TermuxAPI(
+            enabled=config.termux,
+            notify=config.notify,
+            vibrate=config.vibrate,
+            toast=config.toast,
+            clipboard=config.clipboard,
+            system_info=config.system_info,
+        )
         self.on_change: Callable[[], None] = lambda: None
         self.on_quit: Callable[[], None] = lambda: None
         self._quit_event = asyncio.Event()
@@ -97,6 +106,7 @@ class IRCApp:
             default_port=config.resolved_port,
             use_tls=config.tls,
         )
+        self.ctx.termux = self.termux
 
     # -- commands -> app -----------------------------------------------------
 
@@ -209,14 +219,22 @@ class IRCApp:
             self.state.connected = True
             self.state.server = detail.rsplit(":", 1)[0]
             self.state.log(f"connected to {detail}")
+            self._fire_toast(f"connected to {detail}")
         elif status == "disconnected":
             self.state.connected = False
             for name in self.state.joined_channels():
                 self.state.buffers[name].joined = False
             self.state.log(f"disconnected: {detail}", "error")
+            self._fire_toast(f"disconnected: {detail}")
         elif status == "error":
             self.state.log(detail, "error")
         self.on_change()
+
+    def _fire_toast(self, text: str) -> None:
+        """Best-effort Termux toast; never blocks the UI loop."""
+        if self.termux.toast and self.termux.active:
+            with contextlib.suppress(Exception):
+                asyncio.get_running_loop().create_task(self.termux.show_toast(text))
 
     def _on_message(self, msg: IRCMessage) -> None:
         handle_message(self, msg)
@@ -341,6 +359,7 @@ def handle_message(app: IRCApp, msg: IRCMessage) -> None:
             buf.unread += 1
             if kind == "highlight":
                 buf.highlight = True
+        _maybe_ping(app, nick, dest, text, kind)
         return
 
     if cmd == "JOIN":
@@ -426,6 +445,30 @@ def handle_message(app: IRCApp, msg: IRCMessage) -> None:
     # Everything else: show compactly in status.
     detail = " ".join(msg.params) or msg.trailing
     state.log(f"[{cmd}] {detail}", "raw", to=STATUS_BUFFER)
+
+
+def _maybe_ping(app: IRCApp, nick: str, dest: str, text: str, kind: str) -> None:
+    """Fire Termux notification + vibration for mentions and PMs.
+
+    Never raises; fires only for other people's highlight/PM messages.
+    """
+    if not app.termux.active or irc_lower(nick) == irc_lower(app.state.nick):
+        return
+    is_pm = not is_channel(dest)
+    if kind != "highlight" and not (is_pm and kind in ("msg", "action")):
+        return
+    if kind == "highlight":
+        title = f"{nick} in {dest}"
+    else:
+        title = f"{nick} (private message)"
+    summary = f"{title}: {text}"
+
+    async def _ping() -> None:
+        with contextlib.suppress(Exception):
+            await app.termux.ping_user(title, summary)
+
+    with contextlib.suppress(Exception):
+        asyncio.get_running_loop().create_task(_ping())
 
 
 def _apply_mode(state: ClientState, channel: str, modes: str, args: list[str]) -> None:

@@ -60,6 +60,40 @@ def make_parser() -> argparse.ArgumentParser:
         default=None,
         help="do not auto-reconnect on disconnect",
     )
+    p.add_argument(
+        "--termux",
+        dest="termux",
+        action="store_true",
+        default=None,
+        help=argparse.SUPPRESS,
+    )
+    p.add_argument(
+        "--no-termux",
+        dest="termux",
+        action="store_false",
+        help="disable all Termux:API features",
+    )
+    for _name, _help in (
+        ("notify", "Android notifications on mentions/PMs"),
+        ("vibrate", "vibrate on mentions/highlights"),
+        ("toast", "toasts on connect/disconnect"),
+        ("clipboard", "/paste and /copy clipboard commands"),
+        ("system-info", "battery/wifi in /status"),
+    ):
+        _dest = _name.replace("-", "_")
+        p.add_argument(
+            f"--{_name}",
+            dest=_dest,
+            action="store_true",
+            default=None,
+            help=argparse.SUPPRESS,
+        )
+        p.add_argument(
+            f"--no-{_name}",
+            dest=_dest,
+            action="store_false",
+            help=f"disable {_help}",
+        )
     p.add_argument("--config", type=Path, default=None, help="path to a TOML config file")
     p.add_argument("--version", action="store_true", help="print version and exit")
     return p
@@ -79,6 +113,12 @@ def _cli_overrides(args: argparse.Namespace) -> dict[str, object]:
         "password",
         "channels",
         "reconnect",
+        "termux",
+        "notify",
+        "vibrate",
+        "toast",
+        "clipboard",
+        "system_info",
     ):
         value = getattr(args, key, None)
         if value is not None:
@@ -93,6 +133,7 @@ async def _amain(config: Config) -> int:
         submit=lambda line: dispatch_input(app.ctx, line),
         request_quit=lambda: asyncio.ensure_future(app.command_quit("leaving")),
     )
+    app.ctx.insert_text = ui.insert_text
     try:
         await app.run(ui)
     except KeyboardInterrupt:

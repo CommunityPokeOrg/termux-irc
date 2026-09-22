@@ -38,6 +38,13 @@ class Config:
     reconnect: bool = True
     ping_after: float = 120.0
     ping_timeout: float = 60.0
+    # Termux:API integration (all no-op off Termux)
+    termux: bool = True  # master switch
+    notify: bool = True  # termux-notification on mentions/PMs
+    vibrate: bool = True  # termux-vibrate on mentions/highlights
+    toast: bool = True  # termux-toast for connect/disconnect
+    clipboard: bool = True  # /paste and /copy commands
+    system_info: bool = True  # /status battery + wifi info
 
     @property
     def resolved_port(self) -> int:
@@ -83,6 +90,12 @@ _FILE_KEYS = {
     "reconnect",
     "ping_after",
     "ping_timeout",
+    "termux",
+    "notify",
+    "vibrate",
+    "toast",
+    "clipboard",
+    "system_info",
 }
 
 _ENV_KEYS = _FILE_KEYS
@@ -143,4 +156,12 @@ realname = "termux-irc user"
 # password = "server-password"   # prefer TERMUX_IRC_PASSWORD env instead
 channels = ["#termux"]
 reconnect = true
+
+# Termux:API integration (no-op on regular Linux/macOS)
+termux = true        # master switch for all termux-api features
+notify = true        # Android notifications on mentions/PMs
+vibrate = true       # vibrate on mentions/highlights
+toast = true         # toasts on connect/disconnect
+clipboard = true     # /paste and /copy commands
+system_info = true   # /status battery + wifi
 """

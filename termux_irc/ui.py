@@ -260,6 +260,11 @@ class ChatUI:
         self._input = self._input[: self._cursor] + text + self._input[self._cursor :]
         self._cursor += len(text)
 
+    def insert_text(self, text: str) -> None:
+        """Public hook (e.g. /paste): insert text into the input line."""
+        self._insert(text)
+        self._dirty = True
+
     def _backspace(self) -> None:
         if self._cursor > 0:
             self._input = self._input[: self._cursor - 1] + self._input[self._cursor :]

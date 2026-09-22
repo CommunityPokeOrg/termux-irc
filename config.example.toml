@@ -11,3 +11,12 @@ realname = "termux-irc user"
 # password = "server-password"  # prefer TERMUX_IRC_PASSWORD env instead
 channels = ["#termux"]
 reconnect = true
+
+# Termux:API integration (no-op on regular Linux/macOS; needs the
+# Termux:API app + `pkg install termux-api` on Android)
+termux = true        # master switch for all termux-api features
+notify = true        # Android notifications on mentions/PMs
+vibrate = true       # vibrate on mentions/highlights
+toast = true         # toasts on connect/disconnect
+clipboard = true     # /paste and /copy commands
+system_info = true   # battery + wifi in /status

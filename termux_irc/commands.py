@@ -7,12 +7,14 @@ to connect/disconnect/quit) so the module is testable without a UI.
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 
 from .client import IRCClient
 from .protocol import is_channel
 from .state import STATUS_BUFFER, ClientState
+from .termux_api import TermuxAPI, format_battery, format_wifi
 
 ConnectFn = Callable[[str, int, bool], Awaitable[None]]
 QuitFn = Callable[[str], Awaitable[None]]
@@ -29,6 +31,9 @@ class CommandContext:
     default_port: int = 6697
     use_tls: bool = True
     client: IRCClient | None = field(default=None)
+    # Optional integrations (set by the app/UI; None-safe everywhere)
+    termux: TermuxAPI | None = None
+    insert_text: Callable[[str], None] | None = None  # UI input-line hook
 
     def log(self, text: str, kind: str = "info", to: str | None = None) -> None:
         self.state.log(text, kind=kind, to=to or STATUS_BUFFER)
@@ -286,6 +291,64 @@ async def _cmd_help(ctx: CommandContext, args: list[str], rest: str) -> None:
         ctx.log(line, "info")
 
 
+async def _cmd_paste(ctx: CommandContext, args: list[str], rest: str) -> None:
+    """Paste the Android clipboard into the input line (or show it)."""
+    t = ctx.termux
+    if t is None or not t.clipboard or not t.active:
+        ctx.log("clipboard unavailable (termux-api not installed?)", "error")
+        return
+    text = await t.clipboard_get()
+    if text is None:
+        ctx.log("clipboard unavailable (termux-api not installed?)", "error")
+        return
+    if not text:
+        ctx.log("clipboard is empty", "info")
+        return
+    text = " ".join(text.split())  # flatten to one line
+    if ctx.insert_text is not None:
+        ctx.insert_text(text)
+        ctx.log("pasted clipboard into input", "info")
+    else:
+        ctx.log(f"clipboard: {text}", "info")
+
+
+async def _cmd_copy(ctx: CommandContext, args: list[str], rest: str) -> None:
+    """Copy text (or the last buffer line) to the Android clipboard."""
+    t = ctx.termux
+    if t is None or not t.clipboard or not t.active:
+        ctx.log("clipboard unavailable (termux-api not installed?)", "error")
+        return
+    text = rest.strip()
+    if not text:
+        lines = ctx.state.active_buffer.lines
+        if not lines:
+            ctx.log("nothing to copy", "error")
+            return
+        last = lines[-1]
+        text = last.text if last.nick is None else f"<{last.nick}> {last.text}"
+    if await t.clipboard_set(text):
+        ctx.log(f"copied {len(text)} chars to clipboard", "info")
+    else:
+        ctx.log("clipboard write failed", "error")
+
+
+async def _cmd_status(ctx: CommandContext, args: list[str], rest: str) -> None:
+    """Show client + device status: server, nick, battery, wifi."""
+    s = ctx.state
+    conn = f"connected to {s.server}" if s.connected else "not connected"
+    ctx.log(f"{conn} as {s.nick}; buffers: {len(s.buffers)}", "info")
+    t = ctx.termux
+    if t is None or not t.system_info or not t.active:
+        return
+    battery, wifi = await asyncio.gather(t.battery_status(), t.wifi_info())
+    if battery:
+        ctx.log(format_battery(battery), "info")
+    if wifi:
+        ctx.log(format_wifi(wifi), "info")
+    if not battery and not wifi:
+        ctx.log("termux-api system info unavailable", "info")
+
+
 COMMANDS: dict[str, CommandFn] = {
     "connect": _cmd_connect,
     "server": _cmd_connect,
@@ -314,6 +377,9 @@ COMMANDS: dict[str, CommandFn] = {
     "w": _cmd_window,
     "buffer": _cmd_window,
     "close": _cmd_close,
+    "paste": _cmd_paste,
+    "copy": _cmd_copy,
+    "status": _cmd_status,
     "help": _cmd_help,
     "h": _cmd_help,
     "?": _cmd_help,
@@ -338,6 +404,9 @@ commands:
   /next /prev                           cycle buffers (or Ctrl-N / Ctrl-P)
   /close [#chan|nick]                   close a buffer (parts if joined)
   /clear                                clear the current buffer
+  /paste                                insert clipboard into input (Termux)
+  /copy [text]                          copy text/last line to clipboard (Termux)
+  /status                               client + battery + wifi status
   /quit [reason]                        disconnect and exit
   /help                                 this help
 
