@@ -1,0 +1,13 @@
+# termux-irc configuration
+# Copy to ~/.config/termux-irc/config.toml and edit.
+
+server = "irc.libera.chat"
+# port = 6697                # default: 6697 with tls, 6667 without
+tls = true                   # set false for plaintext
+# tls_verify = true          # set false only for self-signed servers
+nick = "tux"
+user = "tux"
+realname = "termux-irc user"
+# password = "server-password"  # prefer TERMUX_IRC_PASSWORD env instead
+channels = ["#termux"]
+reconnect = true
